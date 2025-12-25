@@ -1,4 +1,4 @@
-name: Prettify JavaScript
+name: ESLint Auto Fix
 
 on:
   push:
@@ -15,29 +15,26 @@ on:
       - "**/*.tsx"
 
 jobs:
-  prettify:
+  eslint:
     runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install Prettier
-        run: npm install --global prettier
+      - name: Install deps
+        run: npm ci
 
-      - name: Run Prettier
-        run: |
-          prettier --write "**/*.{js,jsx,ts,tsx}"
+      - name: ESLint auto-fix
+        run: npx eslint . --fix
 
-      - name: Commit changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+      - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: prettify JavaScript"
+          commit_message: "chore: eslint auto-fix"
           branch: ${{ github.head_ref || github.ref_name }}
