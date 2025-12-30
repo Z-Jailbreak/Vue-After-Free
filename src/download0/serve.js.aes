@@ -28,14 +28,23 @@ try {
     var maxLines = 38; 
 
     // Replace global log() to show on screen
-    log = function(msg) {
-        logBuffer.push(msg);
-        if (logBuffer.length > maxLines) {
-            logBuffer.shift(); // Remove oldest (auto-scroll)
+    _log = function(msg, screen) {
+        if (screen) {
+            logBuffer.push(msg);
+            if (logBuffer.length > maxLines) {
+                logBuffer.shift(); // Remove oldest (auto-scroll)
+            }
+            logText.text = logBuffer.join("\n");
         }
-        logText.text = logBuffer.join("\n");
-        ws.broadcast(`[LOG] ${msg}`); // Still send to websocket too
-    };
+
+        ws.broadcast(msg); // Still send to websocket too
+    }
+    log = function(msg) {
+        _log(`[+] ${msg}`, true)
+    }
+    debug = function(msg) {
+        _log(`[*] ${msg}`, false)
+    }
     
     log("=== VUE AFTER FREE ===");
 
@@ -45,7 +54,7 @@ try {
             var script = String(e.data);
             jsmaf.eval(script);
         } catch(err) {
-            ws.broadcast(`ERROR: ${err}`);
+            log(err);
         }
     };
 } catch(e) {
