@@ -888,7 +888,7 @@ var struct = {
         alignment = size
       }
 
-      if (size == 0) {
+      if (size === 0) {
           throw new Error(`Invalid size for ${field_name} !!`)
       }
 
@@ -1016,7 +1016,7 @@ var struct = {
             case 'Int16':
               temp.i16[0] = value
               break
-            case 'Int16':
+            case 'Uint16':
               temp.u16[0] = value
               break
             case 'Int32':
