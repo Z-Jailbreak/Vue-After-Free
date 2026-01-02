@@ -27,6 +27,7 @@ export default defineConfig([
       'no-unused-expressions': 'off',
       'no-fallthrough': 'off',
       'no-new-native-nonconstructor': 'off', // we use our own BigInt
+      'no-extend-native': 'off', // we extend DataView
 
       // TS duplicates
       '@typescript-eslint/no-unused-vars': 'off',
