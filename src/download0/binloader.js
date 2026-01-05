@@ -9,9 +9,9 @@ binloader_init = function() {
 log("binloader_init(): Initializing binloader...");
 
 // Check dependencies
-if (typeof libc_addr === 'undefined') {
-    log("ERROR: libc_addr is undefined! Lapse may not have completed.");
-    throw new Error("libc_addr not available - cannot initialize binloader");
+if (typeof kernel === 'undefined') {
+    log("ERROR: kernel is undefined! Lapse may not have completed.");
+    throw new Error("kernel not available - cannot initialize binloader");
 }
 
 if (typeof fn === 'undefined') {
