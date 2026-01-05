@@ -493,7 +493,7 @@ var utils = {
 var fn = {
   register: function (input, name, ret) {
     if (name in this) {
-      throw new Error(`${name} already registered in fn !!`)
+      return this[name];
     }
 
     var id
@@ -514,6 +514,8 @@ var fn = {
     f.addr = addr
 
     this[name] = f
+
+    return f;
   },
   unregister (name) {
     if (!(name in this)) {
