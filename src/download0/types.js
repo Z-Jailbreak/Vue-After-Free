@@ -509,7 +509,7 @@ var fn = {
       addr = syscalls.map.get(input)
     }
 
-    var f = this.wrapper.bind({id: id, addr: addr, ret: ret })
+    var f = this.wrapper.bind({id: id, addr: addr, ret: ret, name: name })
 
     f.addr = addr
 
@@ -581,11 +581,11 @@ var fn = {
 
       if (this.id) {
         if (result.eq(-1)) {
-          var errno_addr = this._error()
+          var errno_addr = fn._error()
           var errno = mem.view(errno_addr).getUint32(0, true)
-          var str = this.strerror(errno)
+          var str = fn.strerror(errno)
 
-          throw new Error(`${name} returned errno ${errno}: ${str}`)
+          throw new Error(`${this.name} returned errno ${errno}: ${str}`)
         }
       }
 
