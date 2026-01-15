@@ -1,5 +1,6 @@
 include('userland.js')
 include('kernel.js')
+include('binloader.js')
 
 if (!String.prototype.padStart) {
     String.prototype.padStart = function padStart(targetLength, padString) {
@@ -1004,6 +1005,9 @@ function netctrl_exploit() {
 
     // Jailbreak
     jailbreak();
+
+    debug("Spawning binloader");
+    binloader_init();
 
 }
 
