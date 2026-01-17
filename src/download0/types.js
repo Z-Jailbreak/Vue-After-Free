@@ -654,7 +654,7 @@ var gadgets = {
     this.PUSH_RAX_POP_RBP_RET = base.add(0x4E82B9)
     this.CMP_EBX_QWORD_PTR_RDI_PLUS_RDXx4_LESS_80_RET = base.add(0x77E1BC)
     this.CMOVE_RAX_RDI_RET = base.add(0x4E2C87)
-    this.MOV_EDI_EAX_POP_RBP_MOV_RAX_RDI_RET = base.add(43618)
+    this.MOV_EDI_EAX_POP_RBP_MOV_RAX_RDI_RET = base.add(0x43618)
   }
 }
 
