@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Send inject.js to PS4 for execution"""
-import asyncio
-import pathlib
+
 import argparse
+import asyncio
+import linecache
+import pathlib
+from datetime import datetime
+
 import websockets
-import readline
 
 parser = argparse.ArgumentParser(description="WebSocket client for JSMAF")
 parser.add_argument("ip", help="IP address of the PS4")
@@ -21,19 +24,24 @@ DELAY = args.delay
 RETRY = True
 
 
+def log_print(message):
+    time_now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"[{time_now}] {message}")
+
+
 async def send_file(ws: websockets.ClientConnection, file_path: str):
     try:
         path = pathlib.Path(file_path)
         if not path.is_file():
-            print(f"[!] File not found: {file_path}")
+            log_print(f"[!] File not found: {file_path}")
             return
 
         message = path.read_text("utf-8")
         await ws.send(message)
 
-        print(f"[*] Sent {file_path} ({len(message)} bytes) to server")
+        log_print(f"[*] Sent {file_path} ({len(message)} bytes) to server")
     except Exception as e:
-        print(f"[!] Failed to send file: {e}")
+        log_print(f"[!] Failed to send file: {e}")
 
 
 async def command(ws: websockets.ClientConnection):
@@ -42,9 +50,10 @@ async def command(ws: websockets.ClientConnection):
     loop = asyncio.get_event_loop()
     while ws.state == websockets.protocol.State.OPEN:
         try:
-            cmd = await loop.run_in_executor(None, input, "> ")
+            cmd = await loop.run_in_executor(None, input, ">")
         except (EOFError, KeyboardInterrupt):
-            print("\n[*] Disconnecting...")
+            print()
+            log_print("[*] Disconnecting...")
             await ws.close()
             RETRY = False
             break
@@ -54,24 +63,25 @@ async def command(ws: websockets.ClientConnection):
         if len(parts) == 2 and parts[0].lower() == "send":
             await send_file(ws, parts[1])
         elif cmd.lower() in ("quit", "exit", "disconnect"):
-            print("[*] Disconnecting...")
+            log_print("[*] Disconnecting...")
             await ws.close()
             RETRY = False
             break
         else:
-            print("[*] Unknown command. Use: send <path-to-file>")
+            if cmd.strip():
+                log_print("[*] Unknown command. Use: send <path-to-file>")
 
 
 async def receiver(ws: websockets.ClientConnection):
     try:
         async for data in ws:
             if isinstance(data, str):
-                print(data)
+                log_print(data)
     except websockets.ConnectionClosed:
-        print("[*] Disconnected")
+        log_print("[*] Disconnected")
         pass
     except Exception as e:
-        print(f"[!] {e}")
+        log_print(f"[!] {e}")
 
 
 async def main():
@@ -80,9 +90,9 @@ async def main():
         receiver_task = None
         command_task = None
         try:
-#            print(f"[*] Connecting to {IP}:{PORT}...")
+            #            log_print(f"[*] Connecting to {IP}:{PORT}...")
             async with websockets.connect(f"ws://{IP}:{PORT}", ping_timeout=None) as ws:
-                print(f"[*] Connected to {IP}:{PORT} !!")
+                log_print(f"[*] Connected to {IP}:{PORT} !!")
                 receiver_task = asyncio.create_task(receiver(ws))
                 command_task = asyncio.create_task(command(ws))
 
@@ -90,9 +100,9 @@ async def main():
                     [receiver_task, command_task],
                     return_when=asyncio.FIRST_COMPLETED,
                 )
-        except Exception as e:
-#            print("[!] Error:", e)
-#            print(f"[*] Retrying in {DELAY} seconds...")
+        except Exception:
+            #            log_print(f"[!] Error: {e}")
+            #            log_print(f"[*] Retrying in {DELAY} seconds...")
             await asyncio.sleep(DELAY)
         finally:
             if receiver_task is not None:
@@ -104,4 +114,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
