@@ -28,6 +28,9 @@ export default defineConfig([
   }),
   {
     rules: {
+      '@stylistic/quote-props': 'off',
+      '@stylistic/quotes': 'off',
+
       'quote-props' : ['error', 'consistent-as-needed'],
 
       camelcase: 'off',
