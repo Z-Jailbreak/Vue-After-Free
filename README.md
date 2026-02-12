@@ -16,9 +16,6 @@
 CVE-2018-4441 was shortly applied but due to instability and bad success rate it was dropped.    
 CVE-2017-7117 is used for the userland, and has been chained with Lapse and Poopsploit(Netctrl) kernel exploits on respective firmwares marked below.
 
-> [!IMPORTANT]
-> Netctrl stability is low due to high memory usage by the exploit compared to the available memory in Vue.
-
 ## Vulnerability Scope
 KEX= Kernel Exploit
 | vue-after-free (Userland) | Lapse (KEX) | Netctrl (KEX) |
@@ -41,7 +38,8 @@ Q: I ran Vue and the app crashed? A: If the app crashes the exploit failed reboo
 Q: I ran Vue and my console shutdown what do I do? A: If a kernel panic occurred you may need to press the power button on your console twice, then retry running the exploit.    
 Q: How can I run a payload? A: Closing and Reopening Vue is required between running js payloads, but .bin or .elf payloads can be run one after the other. Select the payload from the UI in the Payload Menu.    
 Q: Can I run the jailbreak offline? A: No. PS Vue requires any form of network connection, internet is not required as such you can use any network like home WiFi or Hotspot from your mobile phone or a network from a micro controller like ESP32 or an Ethernet network from a reporpused PPPwn device.     
-Q: I am getting "This service requires you to sign in to PlayStation Network" even after replacing the save file how can I fix it? A: Your Vue app most likely updated, this usually happens when not using a DNS or blocking Sony servers in general. You will have to delete and reinstall it.      
+Q: I am getting "This service requires you to sign in to PlayStation Network" even after replacing the save file how can I fix it? A: Your Vue app most likely updated, this usually happens when not using a DNS or blocking Sony servers in general. You will have to delete and reinstall it.     
+Q: My payload is not recognized what should I do? A: Format your USB drive to mbr partition and exfat format. 
 
 > [!IMPORTANT]
 > The Vue save file may occasionally reset. To avoid issues please copy the encrypted save to a USB, from the PS4 settings menu for the user that is used to run the jailbreak, for easy future recovery.   
@@ -82,7 +80,7 @@ A network connection of any kind is required, before trying to run Vue please co
   13. Optionally after jailbreaking run the [np-fake-signin](https://github.com/Vuemony/vue-after-free/blob/main/README.md#np-fake-signin) payload to avoid the PSN pop-up.
 
 ## Non-Jailbroken PS4
-A network connection of any kind is required, before trying to run Vue please connect to a local network even if it does not have internet. [Connection Instructions](https://github.com/Vuemony/vue-after-free?tab=readme-ov-file#connecting-to-the-internet)
+A network connection of any kind is required, before trying to run Vue please connect to a local network even if it does not have internet, but if it does make sure you have first read the instructions  >. [Connection Instructions](https://github.com/Vuemony/vue-after-free?tab=readme-ov-file#connecting-to-the-internet)
   1. Format your USB Drive to Exfat.
 > [!WARNING]
 > This will wipe your drive of all data. Backup any important data.   
@@ -141,8 +139,7 @@ In config.js you can add .bin or .elf files to be loaded automatically on kernel
 Example: `/mnt/sandbox/download/CUSA00960/payloads/kernel_dumper.bin`
 
 # NP-Fake-SignIn
-The np-fake-signin payload gets rid of the first PS Vue pop-up asking you to sign into PSN.
-In the payloads section of Vue enable elfldr, then send `np-fake-signin-ps4.elf` with a payload sender or netcat.
+The np-fake-signin payload gets rid of the first PS Vue pop-up asking you to sign into PSN. It can be launched from the payloads menu.
 
 # Creating a separate user
 If you wish to use a new account instead of the default one in the system backup.
@@ -160,7 +157,7 @@ If you wish to use a new account instead of the default one in the system backup
 - [Gezine](https://github.com/gezine) — Local JS method and PSN bypass research
 - [Helloyunho](https://github.com/Helloyunho) — TypeScript port  , Reverse Engineering
 - [Dr.Yenyen](https://github.com/DrYenyen) — Extensive testing, quality control, and end‑user support/ideas
-- [AlAzif](https://github.com/Al-Azif) — Reference for exploit table and retail application advice
+- [AlAzif](https://github.com/Al-Azif) — Reference for exploit table, retail application advice, Lapse AIO Fix kpatches and 12.50-13.00 kpatches.
 - abc — Lapse
 - [TheFlow](https://github.com/TheOfficialFloW) — NetCtrl
 - [Lua Loader project](https://github.com/shahrilnet/remote_lua_loader) — Remote Lua loader foundation
