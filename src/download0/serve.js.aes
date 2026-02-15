@@ -151,18 +151,16 @@ try {
     var maxLines = 38;
     var logTextLines = [];
 
-    // Rainbow colors (lighter/pastel for visibility on black)
     var rainbowColors = [
-        "#FF6B6B", // Light Red
-        "#FFA94D", // Light Orange
-        "#FFD93D", // Light Yellow
-        "#6BCF7F", // Light Green
-        "#4DABF7", // Light Blue
-        "#9775FA", // Light Indigo
-        "#DA77F2"  // Light Violet
+        "#FF6B6B",
+        "#FFA94D",
+        "#FFD93D",
+        "#6BCF7F",
+        "#4DABF7",
+        "#9775FA",
+        "#DA77F2"
     ];
 
-    // Create text object for each line
     for (var i = 0; i < maxLines; i++) {
         var lineText = new jsmaf.Text();
         lineText.text = "";
