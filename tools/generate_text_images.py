@@ -38,11 +38,6 @@ TRANSLATIONS = {
         'jbBehaviorAuto': 'كشف تلقائي',
         'jbBehaviorNetctrl': 'NetControl',
         'jbBehaviorLapse': 'Lapse',
-        'totalAttempts': 'اجمالي المحاولات: ',
-        'successes': 'النجاحات: ',
-        'failures': 'الاخفاقات: ',
-        'successRate': 'معدل النجاح: ',
-        'failureRate': 'معدل الفشل: ',
     },
     'ja': {
         'jailbreak': '脱獄',
@@ -58,11 +53,6 @@ TRANSLATIONS = {
         'jbBehaviorAuto': '自動検出',
         'jbBehaviorNetctrl': 'NetControl',
         'jbBehaviorLapse': 'Lapse',
-        'totalAttempts': '試行回数: ',
-        'successes': '成功: ',
-        'failures': '失敗: ',
-        'successRate': '成功率: ',
-        'failureRate': '失敗率: ',
     },
     'ko': {
         'jailbreak': '탈옥',
@@ -78,11 +68,6 @@ TRANSLATIONS = {
         'jbBehaviorAuto': '자동 감지',
         'jbBehaviorNetctrl': 'NetControl',
         'jbBehaviorLapse': 'Lapse',
-        'totalAttempts': '총 시도: ',
-        'successes': '성공: ',
-        'failures': '실패: ',
-        'successRate': '성공률: ',
-        'failureRate': '실패율: ',
     },
     'zh': {
         'jailbreak': '越狱',
@@ -98,11 +83,6 @@ TRANSLATIONS = {
         'jbBehaviorAuto': '自动检测',
         'jbBehaviorNetctrl': 'NetControl',
         'jbBehaviorLapse': 'Lapse',
-        'totalAttempts': '总尝试次数: ',
-        'successes': '成功: ',
-        'failures': '失败: ',
-        'successRate': '成功率: ',
-        'failureRate': '失败率: ',
     },
 }
 
