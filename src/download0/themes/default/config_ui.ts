@@ -450,7 +450,7 @@ if (typeof lang === 'undefined') {
       },
       payloads: userPayloads
     }
-  
+
     const configContent = JSON.stringify(configData, null, 2)
 
     fs.write('config.json', configContent, function (err) {
@@ -464,54 +464,54 @@ if (typeof lang === 'undefined') {
 
   function loadConfig () {
     fs.read('config.json', function (err: Error | null, data?: string) {
-    if (err) {
-      log('ERROR: Failed to read config: ' + err.message)
-      return
-    }
-
-    try {
-      const configData = JSON.parse(data || '{}')
-      
-      if (configData.config) {
-        const CONFIG = configData.config
-        
-        currentConfig.autolapse = CONFIG.autolapse || false
-        currentConfig.autopoop = CONFIG.autopoop || false
-        currentConfig.autoclose = CONFIG.autoclose || false
-        currentConfig.autoclose_delay = CONFIG.autoclose_delay || 0
-        currentConfig.music = CONFIG.music !== false
-        currentConfig.jb_behavior = CONFIG.jb_behavior || 0
-
-        // Validate and set theme (themes are auto-discovered from directory scan)
-        if (CONFIG.theme && availableThemes.includes(CONFIG.theme)) {
-          currentConfig.theme = CONFIG.theme
-        } else {
-          log('WARNING: Theme "' + (CONFIG.theme || 'undefined') + '" not found in available themes, using default')
-          currentConfig.theme = availableThemes[0] || 'default'
-        }
-
-        // Preserve user's payloads
-        if (configData.payloads && Array.isArray(configData.payloads)) {
-          userPayloads = configData.payloads.slice()
-        }
-
-        for (let i = 0; i < configOptions.length; i++) {
-          updateValueText(i)
-        }
-        if (currentConfig.music) {
-          startBgmIfEnabled()
-        } else {
-          stopBgm()
-        }
-        configLoaded = true
-        log('Config loaded successfully')
+      if (err) {
+        log('ERROR: Failed to read config: ' + err.message)
+        return
       }
-    } catch (e) {
-      log('ERROR: Failed to parse config: ' + (e as Error).message)
-      configLoaded = true // Allow saving even on error
-    }
-  })
-}
+
+      try {
+        const configData = JSON.parse(data || '{}')
+
+        if (configData.config) {
+          const CONFIG = configData.config
+
+          currentConfig.autolapse = CONFIG.autolapse || false
+          currentConfig.autopoop = CONFIG.autopoop || false
+          currentConfig.autoclose = CONFIG.autoclose || false
+          currentConfig.autoclose_delay = CONFIG.autoclose_delay || 0
+          currentConfig.music = CONFIG.music !== false
+          currentConfig.jb_behavior = CONFIG.jb_behavior || 0
+
+          // Validate and set theme (themes are auto-discovered from directory scan)
+          if (CONFIG.theme && availableThemes.includes(CONFIG.theme)) {
+            currentConfig.theme = CONFIG.theme
+          } else {
+            log('WARNING: Theme "' + (CONFIG.theme || 'undefined') + '" not found in available themes, using default')
+            currentConfig.theme = availableThemes[0] || 'default'
+          }
+
+          // Preserve user's payloads
+          if (configData.payloads && Array.isArray(configData.payloads)) {
+            userPayloads = configData.payloads.slice()
+          }
+
+          for (let i = 0; i < configOptions.length; i++) {
+            updateValueText(i)
+          }
+          if (currentConfig.music) {
+            startBgmIfEnabled()
+          } else {
+            stopBgm()
+          }
+          configLoaded = true
+          log('Config loaded successfully')
+        }
+      } catch (e) {
+        log('ERROR: Failed to parse config: ' + (e as Error).message)
+        configLoaded = true // Allow saving even on error
+      }
+    })
+  }
 
   function handleButtonPress () {
     if (currentButton < configOptions.length) {
