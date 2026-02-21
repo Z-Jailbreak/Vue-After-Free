@@ -255,58 +255,73 @@ try {
     }
     
     
-   
-    var needsConfig = false;
-    try {
-        include('config.js')
-        if (typeof CONFIG === 'undefined') {
-            log('CONFIG var missing from config.js, regenerating')
-            needsConfig = true;
-        }
-    }
-    catch(e){
-        log(e.message)
-        log('config.js not found! creating config')
-        needsConfig = true;
-    }
-
-    if (needsConfig) {
-        var config = [
-            'var CONFIG = {',
-            '    autolapse: false,',
-            '    autopoop: false,',
-            '    autoclose: false,',
-            '    autoclose_delay: 0, //set to 20000 for ps4 hen',
-            '    music: true,',
-            '    jb_behavior: 0,',
-            "    theme: 'default'",
-            '};',
-            '',
-            'var payloads = [ //to be ran after jailbroken',
-            '];'
-        ].join('\n');
-        fs.write("config.js", config, function(err) {
-            if (!err) console.log("config.js written");
-            include('config.js');
-        });
-    }
+    // Global CONFIG variable
+    var CONFIG = null;
+    var payloads = [];
     
-    if(CONFIG.autolapse){
-        include('loader.js')
-    } else if(CONFIG.autopoop && psn.mainUser.signedIn){
-        CONFIG.jb_behavior = 1
-        include('loader.js')
-    } 
-    else {
-        var themeName = CONFIG.theme || 'default';
-        try {
-            include('themes/' + themeName + '/main.js');
-        } catch(e) {
-            log('Failed to load theme "' + themeName + '": ' + e.message);
-            log('Falling back to default theme');
-            include('themes/default/main.js');
+    var needsConfig = false;
+    
+    // Try to load config.json
+    fs.read('config.json', function(err, data) {
+        if (err) {
+            log('config.json not found! creating default config');
+            needsConfig = true;
+        } else {
+            try {
+                var configData = JSON.parse(data);
+                CONFIG = configData.config || {};
+                payloads = configData.payloads || [];
+                log('Config loaded successfully');
+            } catch(e) {
+                log('ERROR parsing config.json: ' + e.message);
+                needsConfig = true;
+            }
         }
-    }
+
+        // Create default config if needed
+        if (needsConfig) {
+            var defaultConfig = {
+                config: {
+                    autolapse: false,
+                    autopoop: false,
+                    autoclose: false,
+                    autoclose_delay: 0,
+                    music: true,
+                    jb_behavior: 0,
+                    theme: 'default'
+                },
+                payloads: []
+            };
+            
+            CONFIG = defaultConfig.config;
+            payloads = defaultConfig.payloads;
+            
+            fs.write("config.json", JSON.stringify(defaultConfig, null, 2), function(err) {
+                if (!err) {
+                    log("config.json created");
+                } else {
+                    log("ERROR creating config.json: " + err.message);
+                }
+            });
+        }
+
+        if(CONFIG.autolapse){
+            include('loader.js')
+        } else if(CONFIG.autopoop && psn.mainUser.signedIn){
+            CONFIG.jb_behavior = 1
+            include('loader.js')
+        } 
+        else {
+            var themeName = CONFIG.theme || 'default';
+            try {
+                include('themes/' + themeName + '/main.js');
+            } catch(e) {
+                log('Failed to load theme "' + themeName + '": ' + e.message);
+                log('Falling back to default theme');
+                include('themes/default/main.js');
+            }
+        }
+    });
     
     // handle WebSocket received messages
     ws.onmessage = function(c, e) {
