@@ -72,7 +72,7 @@ jobs:
 
           # Hardcoded lite config - auto detect, auto close, no music, no menu
           printf '{
-              "CONFIG": {
+              "config": {
                   "autolapse": true,
                   "autopoop": false,
                   "autoclose": true,
